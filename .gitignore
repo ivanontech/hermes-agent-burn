@@ -1,0 +1,17 @@
+/target/
+**/*.rs.bk
+*.db
+*.sqlite
+*.sqlite3
+*.jsonl
+.env
+.env.*
+!.env.example
+weights/*.safetensors
+weights/*.bin
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+models/
+burn_models*/
+.DS_Store

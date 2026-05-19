@@ -1,0 +1,31 @@
+[package]
+name = "joi-burn"
+version = "0.2.0"
+edition = "2021"
+description = "Joi Swarm — Burn framework inference + training"
+
+[[bin]]
+name = "joi-burn"
+path = "src/main.rs"
+
+[[bin]]
+name = "joi-train"
+path = "src/train.rs"
+
+[dependencies]
+burn = { version = "0.16", features = ["wgpu", "autodiff", "train"] }
+burn-ndarray = "0.16"
+safetensors = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+half = "2"
+chrono = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rand = "0.8"
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+target-cpu = "native"
