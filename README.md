@@ -1,44 +1,55 @@
 # Hermes Agent Burn Tool
 
-A public, sanitized Rust/Burn implementation of the custom **Hermes/Joi agent** inference and training tool.
+**Rust/Burn local inference + training for agent-side temporal signal models.**
 
-This repo is meant for people running **Hermes** or **OpenClaw** agent stacks who want a local Burn/WGPU signal model they can wire into their own agent runtime.
+This is a public, sanitized implementation of a Hermes/OpenClaw-adjacent Burn tool: a GPU-capable Rust binary for running local sequence models beside an agent runtime, plus a training binary for SQLite-backed feature datasets.
 
-This repo contains:
+The short version: Hermes should not need to call a giant remote LLM for every local signal. This repo shows the lower-level path — small, fast, inspectable models running locally through Burn/WGPU and feeding structured outputs back into an agent loop.
 
-- `joi-burn` — WGPU/Metal/Vulkan inference binary for a temporal 300-brain swarm transformer
-- `joi-train` — Burn autodiff training binary for SQLite-backed feature datasets
-- SafeTensors loading helpers
-- Example input/metadata files
-- No private keys, API tokens, trading credentials, databases, logs, model dumps, or environment-specific config
+## What ships
+
+- `joi-burn` — WGPU/Metal/Vulkan inference binary for temporal multi-brain/swarm-style signal models.
+- `joi-train` — Burn autodiff training binary for SQLite feature datasets.
+- SafeTensors loading helpers.
+- Example input and metadata files.
+- Public-safe docs and sample commands.
+- No private keys, API tokens, trading credentials, local databases, logs, or environment-specific config.
+
+## Architecture
+
+```text
+Hermes/OpenClaw task
+      │
+      ▼
+feature sequence JSON / local feature DB
+      │
+      ├── joi-burn  ──► SafeTensors weights ──► structured signal JSON
+      │
+      └── joi-train ──► SQLite features ───────► new Burn model artifacts
+```
+
+The intended integration pattern is simple: keep the agent orchestration in Hermes, keep heavy/local numeric inference in Rust/Burn, and pass only structured JSON across the boundary.
+
+## Why this is interesting for agent infrastructure
+
+- **Local-first inference:** runs on WGPU-compatible devices instead of requiring a hosted model endpoint.
+- **Agent-friendly IO:** JSON in, JSON out, easy to wrap as a Hermes tool or scheduled worker.
+- **Burn ecosystem:** demonstrates Rust-native model loading/training paths that can sit next to production infrastructure.
+- **Security boundary:** local paths, private datasets, wallets, and credentials stay outside the public repo.
+- **Composable:** can be used as a scoring primitive for trading signals, routing, health models, or any time-series agent heuristic.
 
 ## Status
 
-This is a research tool. Treat outputs as experimental signals, not financial advice or autonomous trading instructions.
+Research/experimental. Outputs are model signals, not financial advice and not autonomous trading instructions.
 
 ## Requirements
 
 - Rust stable
-- A WGPU-compatible device/backend
-- macOS Metal or Linux Vulkan should work best
-- Optional: Hermes or OpenClaw if you want to run it as an agent-side tool
+- WGPU-compatible backend
+- macOS Metal or Linux Vulkan recommended
+- Optional: Hermes Agent or OpenClaw if you want to wire it into an agent runtime
 
 ## Build
-
-```bash
-cargo build --release
-```
-
-The release binaries will be:
-
-```bash
-./target/release/joi-burn
-./target/release/joi-train
-```
-
-## Hermes setup
-
-Use this repo as a local Hermes tool directory or clone it into your Hermes workspace:
 
 ```bash
 git clone https://github.com/ivanontech/hermes-agent-burn.git
@@ -46,7 +57,14 @@ cd hermes-agent-burn
 cargo build --release
 ```
 
-Example Hermes-style tool command:
+Release binaries:
+
+```text
+./target/release/joi-burn
+./target/release/joi-train
+```
+
+## Inference quickstart
 
 ```bash
 ./target/release/joi-burn \
@@ -55,7 +73,15 @@ Example Hermes-style tool command:
   --output ./burn_brain_signal.json
 ```
 
-Example Hermes training command:
+Expected integration contract:
+
+```text
+input_sequence.json  →  joi-burn  →  burn_brain_signal.json
+```
+
+Keep output JSON local if it contains live strategy state.
+
+## Training quickstart
 
 ```bash
 ./target/release/joi-train \
@@ -65,7 +91,19 @@ Example Hermes training command:
   --output ./burn_models_v3
 ```
 
-Suggested Hermes env/config values:
+Training data/database files are intentionally excluded from Git. Use your own feature database with the schema expected by `src/train.rs`.
+
+## Hermes setup
+
+Clone and build the repo inside your workspace:
+
+```bash
+git clone https://github.com/ivanontech/hermes-agent-burn.git
+cd hermes-agent-burn
+cargo build --release
+```
+
+Example local-only environment values:
 
 ```bash
 HERMES_BURN_MODEL_DIR=/path/to/hermes-agent-burn/weights
@@ -73,61 +111,57 @@ HERMES_BURN_INPUT=/path/to/input_sequence.json
 HERMES_BURN_OUTPUT=/path/to/burn_brain_signal.json
 ```
 
-Keep these values local in your own Hermes config or `.env`. Do **not** commit private model paths, live signal outputs, databases, or secrets.
+Keep those values in your own Hermes config or `.env`. Do **not** commit private paths, live signal outputs, databases, wallets, or secrets.
 
-## OpenClaw setup
+## Files
 
-OpenClaw users can run the same binaries from a workspace task, cron, or agent tool wrapper:
+```text
+src/main.rs                  inference binary
+src/train.rs                 training binary
+examples/input_sequence.json sample feature sequence
+weights/README.md            weight placement notes
+Cargo.toml                   Burn/WGPU dependencies
+```
+
+## Verification
 
 ```bash
-git clone https://github.com/ivanontech/hermes-agent-burn.git
-cd hermes-agent-burn
+cargo fmt --check
+cargo check
+```
+
+For release verification:
+
+```bash
 cargo build --release
-./target/release/joi-burn --model-dir ./weights --input ./examples/input_sequence.json
+./target/release/joi-burn --help
+./target/release/joi-train --help
 ```
-
-If you wire this into OpenClaw memory/workspace paths, keep local paths in your own config and do not commit them back to the repo.
-
-## Inference
-
-Put compatible SafeTensors weights in `weights/`:
-
-```bash
-mkdir -p weights
-cp /path/to/swarm_v2_beast.safetensors weights/
-./target/release/joi-burn
-```
-
-Model weights are excluded from git by default because they may be large or proprietary/private.
-
-## Training
-
-```bash
-./target/release/joi-train \
-  --db /path/to/features.sqlite \
-  --epochs 40 \
-  --batch-size 16 \
-  --output ./burn_models_v3
-```
-
-Training data/database files are excluded from git. Use your own feature database with the schema expected by `src/train.rs`.
 
 ## Security / privacy
 
 Before publishing, this repo was sanitized to exclude:
 
-- `.env` files
-- API keys/tokens/private keys
-- local hostnames/IPs and personal absolute paths
-- SQLite databases and JSONL logs
-- model checkpoints/weights
-- build artifacts
+- `.env` files;
+- API keys/tokens/private keys;
+- wallet material;
+- local hostnames/IPs and personal absolute paths;
+- SQLite databases and JSONL logs;
+- private model checkpoints/weights;
+- build artifacts.
 
-Run your own scan before redistributing:
+Run your own scan before redistributing. Report pattern names and filenames only — never paste matched secret values into chat/logs.
 
 ```bash
-grep -RInE 'api[_-]?key|secret|token|private|password|Bearer|sk-[A-Za-z0-9]|/Users/|10\.0\.|\.openclaw|\.hermes' . --exclude-dir target --exclude Cargo.lock
+grep -RInE 'api[_-]?key|secret|token|private|password|Bearer|sk-[A-Za-z0-9]|/Users/|10\.0\.|\.openclaw|\.hermes' . \
+  --exclude-dir target \
+  --exclude Cargo.lock
 ```
+
+## Related
+
+- [`ivanontech/skunkworks`](https://github.com/ivanontech/skunkworks) — AI ops dashboard and Alpha Radar cockpit.
+- [`ivanontech/hermes-burn-tool-router`](https://github.com/ivanontech/hermes-burn-tool-router) — tiny Burn neural router for Hermes tool/control classification.
 
 ## License
 
